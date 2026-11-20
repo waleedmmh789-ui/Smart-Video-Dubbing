@@ -1,56 +1,93 @@
-name: Build Android Debug APK
+Skip to content
+waleedmmh789-ui
+strings.xml
+Repository navigation
+Code
+Issues
+Pull requests
+Actions
+Projects
+Wiki
+Security and quality
+Insights
+Settings
+Build APK and AAB
+Update android.yml #8
+All jobs
+Run details
+Workflow file for this run
+.github/workflows/android.yml at 0dd3a70
+name: Build APK and AAB
 
 on:
+  workflow_dispatch:
   push:
-    branches: [ "main", "master" ]
-  pull_request:
-    branches: [ "main", "master" ]
-  workflow_dispatch: # يسمح بتشغيل البناء يدوياً
+    branches: [ "main" ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. سحب الكود
-    - name: Checkout Repository
+    - name: Checkout repository
       uses: actions/checkout@v4
 
-    # 2. إعداد جافا (بدون كاش لتجنب الخطأ السابق)
+    - name: Unzip Project
+      run: |
+        ZIP_FILE=$(ls *.zip 2>/dev/null | head -n 1)
+        if [ -n "$ZIP_FILE" ]; then
+          echo "Found $ZIP_FILE. Extracting..."
+          unzip "$ZIP_FILE" -d ./unzipped_project
+          # البحث عن مجلد app لتحديد مسار المشروع
+          APP_DIR=$(find ./unzipped_project -type d -name "app" | head -n 1)
+          if [ -z "$APP_DIR" ]; then
+             echo "Error: app folder not found!"
+             exit 1
+          fi
+          PROJECT_DIR=$(dirname "$APP_DIR")
+          echo "Project Directory: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+        else
+          echo "No zip file found."
+          exit 1
+        fi
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
 
-    # 3. إعطاء صلاحيات التنفيذ لملف gradlew
-    - name: Grant execute permission for gradlew
+    # إنشاء ملف gradlew إذا لم يكن موجوداً
+    - name: Generate Gradlew if missing
+      working-directory: ${{ env.PROJECT_DIR }}
       run: |
-        if [ -f "gradlew" ]; then
-          chmod +x gradlew
-        elif [ -f "android/gradlew" ]; then
-          chmod +x android/gradlew
+        if [ ! -f "gradlew" ]; then
+          echo "gradlew missing. Generating..."
+          gradle wrapper
         fi
-
-    # 4. بناء التطبيق (يكتشف تلقائياً مكان المشروع سواء في الجذر أو داخل مجلد android)
-    - name: Build Debug APK
+        chmod +x gradlew
+    - name: Setup Android SDK
       run: |
-        if [ -f "gradlew" ]; then
-          ./gradlew assembleDebug
-        elif [ -f "android/gradlew" ]; then
-          cd android && ./gradlew assembleDebug
-        else
-          echo "لم يتم العثور على gradlew. تأكد من رفع ملفات Gradle Wrapper."
-          exit 1
-        fi
+        echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+        echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
+        echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
+        yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
+    - name: Build APK
+      working-directory: ${{ env.PROJECT_DIR }}
+      run: ./gradlew assembleDebug
 
-    # 5. رفع ملف الـ APK
-    - name: Upload Debug APK
+    - name: Build AAB
+      working-directory: ${{ env.PROJECT_DIR }}
+      run: ./gradlew bundleDebug
+
+    - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: SubGenius-Debug-APK
-        # الكود يبحث عن الملف في المسارين المحتملين
-        path: |
-          app/build/outputs/apk/debug/app-debug.apk
-          android/app/build/outputs/apk/debug/app-debug.apk
-        retention-days: 7
+        name: App-Debug-APK
+        path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+
+    - name: Upload AAB
+      uses: actions/upload-artifact@v4
+      with:
+        name: App-Debug-AAB
+        path: ${{ env.PROJECT_DIR }}/app/build/outputs/bundle/debug/*.aab
