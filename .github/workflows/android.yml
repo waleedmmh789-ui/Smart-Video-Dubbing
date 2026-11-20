@@ -11,7 +11,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # إن وُجد ملف ZIP في جذر المستودع يُفك داخل project/، وإلا يُستخدم محتوى المستودع نفسه
       - name: Extract ZIP project
         run: |
           mkdir -p project
@@ -24,13 +23,12 @@ jobs:
             rsync -a --exclude project --exclude .git ./ project/
           fi
 
-      # يبحث عن مجلد مشروع Gradle (حتى لو كان داخل مجلد فرعي بعد فك الضغط)
       - name: Locate Gradle project
         id: loc
         run: |
           SETTINGS=$(find project -maxdepth 3 \( -name settings.gradle.kts -o -name settings.gradle \) | head -n 1)
           if [ -z "$SETTINGS" ]; then
-            echo "::error::لم يتم العثور على settings.gradle داخل المشروع. تأكد أن الـ ZIP يحتوي على مشروع أندرويد كامل."
+            echo "::error::لم يتم العثور على settings.gradle داخل المشروع."
             find project -maxdepth 3 | head -n 50
             exit 1
           fi
@@ -38,19 +36,13 @@ jobs:
           echo "Project dir: $DIR"
           echo "dir=$DIR" >> "$GITHUB_OUTPUT"
 
-      # حل تعارض ملف libc++_shared.so بين المكتبات الأصلية تلقائياً
       - name: Fix duplicate libc++_shared.so in app build gradle
         run: |
           APP_DIR="${{ steps.loc.outputs.dir }}/app"
           if [ -f "$APP_DIR/build.gradle.kts" ]; then
             if ! grep -q 'libc++_shared.so' "$APP_DIR/build.gradle.kts"; then
-              APP_GRADLE_PATH="$APP_DIR/build.gradle.kts" python3 - << 'EOF'
-import os
-from pathlib import Path
+              cat << 'EOF' >> "$APP_DIR/build.gradle.kts"
 
-p = Path(os.environ["APP_GRADLE_PATH"])
-txt = p.read_text(encoding="utf-8")
-block = """
 android {
     packaging {
         jniLibs {
@@ -58,20 +50,13 @@ android {
         }
     }
 }
-"""
-p.write_text(txt + "\n" + block, encoding="utf-8")
 EOF
-              echo "Patched app/build.gradle.kts with pickFirst for libc++_shared.so"
+              echo "Patched app/build.gradle.kts"
             fi
           elif [ -f "$APP_DIR/build.gradle" ]; then
             if ! grep -q 'libc++_shared.so' "$APP_DIR/build.gradle"; then
-              APP_GRADLE_PATH="$APP_DIR/build.gradle" python3 - << 'EOF'
-import os
-from pathlib import Path
+              cat << 'EOF' >> "$APP_DIR/build.gradle"
 
-p = Path(os.environ["APP_GRADLE_PATH"])
-txt = p.read_text(encoding="utf-8")
-block = """
 android {
     packaging {
         jniLibs {
@@ -79,10 +64,8 @@ android {
         }
     }
 }
-"""
-p.write_text(txt + "\n" + block, encoding="utf-8")
 EOF
-              echo "Patched app/build.gradle with pickFirst for libc++_shared.so"
+              echo "Patched app/build.gradle"
             fi
           fi
 
