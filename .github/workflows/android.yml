@@ -44,9 +44,11 @@ jobs:
           APP_DIR="${{ steps.loc.outputs.dir }}/app"
           if [ -f "$APP_DIR/build.gradle.kts" ]; then
             if ! grep -q 'libc++_shared.so' "$APP_DIR/build.gradle.kts"; then
-              python3 -c '
+              APP_GRADLE_PATH="$APP_DIR/build.gradle.kts" python3 - << 'EOF'
+import os
 from pathlib import Path
-p = Path("'"$APP_DIR/build.gradle.kts"'")
+
+p = Path(os.environ["APP_GRADLE_PATH"])
 txt = p.read_text(encoding="utf-8")
 block = """
 android {
@@ -58,14 +60,16 @@ android {
 }
 """
 p.write_text(txt + "\n" + block, encoding="utf-8")
-'
+EOF
               echo "Patched app/build.gradle.kts with pickFirst for libc++_shared.so"
             fi
           elif [ -f "$APP_DIR/build.gradle" ]; then
             if ! grep -q 'libc++_shared.so' "$APP_DIR/build.gradle"; then
-              python3 -c '
+              APP_GRADLE_PATH="$APP_DIR/build.gradle" python3 - << 'EOF'
+import os
 from pathlib import Path
-p = Path("'"$APP_DIR/build.gradle"'")
+
+p = Path(os.environ["APP_GRADLE_PATH"])
 txt = p.read_text(encoding="utf-8")
 block = """
 android {
@@ -77,7 +81,7 @@ android {
 }
 """
 p.write_text(txt + "\n" + block, encoding="utf-8")
-'
+EOF
               echo "Patched app/build.gradle with pickFirst for libc++_shared.so"
             fi
           fi
