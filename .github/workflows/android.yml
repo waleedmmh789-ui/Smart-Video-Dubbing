@@ -5,37 +5,52 @@ on:
     branches: [ "main", "master" ]
   pull_request:
     branches: [ "main", "master" ]
-  workflow_dispatch: # يسمح لك بتشغيل البناء يدوياً من صفحة Actions
+  workflow_dispatch: # يسمح بتشغيل البناء يدوياً
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. سحب الكود من المستودع
+    # 1. سحب الكود
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    # 2. إعداد بيئة جافا (JDK 17)
+    # 2. إعداد جافا (بدون كاش لتجنب الخطأ السابق)
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
-        cache: gradle
 
     # 3. إعطاء صلاحيات التنفيذ لملف gradlew
     - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
+      run: |
+        if [ -f "gradlew" ]; then
+          chmod +x gradlew
+        elif [ -f "android/gradlew" ]; then
+          chmod +x android/gradlew
+        fi
 
-    # 4. بناء نسخة الـ Debug (لا تحتاج أي مفاتيح توقيع)
+    # 4. بناء التطبيق (يكتشف تلقائياً مكان المشروع سواء في الجذر أو داخل مجلد android)
     - name: Build Debug APK
-      run: ./gradlew assembleDebug
+      run: |
+        if [ -f "gradlew" ]; then
+          ./gradlew assembleDebug
+        elif [ -f "android/gradlew" ]; then
+          cd android && ./gradlew assembleDebug
+        else
+          echo "لم يتم العثور على gradlew. تأكد من رفع ملفات Gradle Wrapper."
+          exit 1
+        fi
 
-    # 5. رفع ملف الـ APK الناتج ليكون متاحاً للتحميل
+    # 5. رفع ملف الـ APK
     - name: Upload Debug APK
       uses: actions/upload-artifact@v4
       with:
         name: SubGenius-Debug-APK
-        path: app/build/outputs/apk/debug/app-debug.apk
-        retention-days: 7 # سيحتفظ بالملف لمدة 7 أيام
+        # الكود يبحث عن الملف في المسارين المحتملين
+        path: |
+          app/build/outputs/apk/debug/app-debug.apk
+          android/app/build/outputs/apk/debug/app-debug.apk
+        retention-days: 7
