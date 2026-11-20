@@ -16,6 +16,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Locate project
+        run: |
+          F=$(find . -maxdepth 3 -name settings.gradle.kts -not -path './.git/*' | head -1)
+          if [ -z "$F" ]; then
+            echo "::error::settings.gradle.kts not found. Upload the project files (app/, build.gradle.kts, settings.gradle.kts, gradle.properties) to the repo."
+            exit 1
+          fi
+          D=$(dirname "$F")
+          [ -f "$D/app/build.gradle.kts" ] || { echo "::error::app/build.gradle.kts missing in $D"; exit 1; }
+          echo "PROJECT_DIR=$D" >> "$GITHUB_ENV"
+          echo "Project found in: $D"
+
       - uses: actions/setup-java@v4
         with:
           java-version: '17'
@@ -26,6 +38,7 @@ jobs:
           gradle-version: "8.9"
 
       - name: Prepare signing key
+        working-directory: ${{ env.PROJECT_DIR }}
         env:
           KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
           KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -53,9 +66,11 @@ jobs:
           echo "KEYSTORE_FILE=release.keystore" >> "$GITHUB_ENV"
 
       - name: Build debug APK + release APK + AAB
+        working-directory: ${{ env.PROJECT_DIR }}
         run: gradle :app:assembleDebug :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace
 
       - name: Collect outputs
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/debug/*.apk dist/SubGenius-debug.apk
@@ -66,10 +81,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: SubGenius-builds
-          path: dist/*
+          path: ${{ env.PROJECT_DIR }}/dist/*
 
       - name: Publish GitHub Release (on v* tags)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: ${{ env.PROJECT_DIR }}/dist/*
