@@ -16,11 +16,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Locate project
+      - name: Locate project (unzip if needed)
         run: |
           F=$(find . -maxdepth 3 -name settings.gradle.kts -not -path './.git/*' | head -1)
           if [ -z "$F" ]; then
-            echo "::error::settings.gradle.kts not found. Upload the project files (app/, build.gradle.kts, settings.gradle.kts, gradle.properties) to the repo."
+            Z=$(find . -maxdepth 2 -name 'SubGenius-Project-Complete.zip' -not -path './.git/*' | head -1)
+            [ -z "$Z" ] && Z=$(find . -maxdepth 2 -name '*.zip' -not -path './.git/*' | head -1)
+            if [ -n "$Z" ]; then
+              echo "Unzipping $Z"
+              unzip -oq "$Z" -d _project
+              F=$(find _project -maxdepth 3 -name settings.gradle.kts | head -1)
+            fi
+          fi
+          if [ -z "$F" ]; then
+            echo "::error::Project not found. Upload SubGenius-Project-Complete.zip to the repo root."
             exit 1
           fi
           D=$(dirname "$F")
