@@ -15,36 +15,64 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
+    # 1. خطوة فك ضغط المشروع
+    - name: Extract ZIP Project
+      run: |
+        # البحث عن أي ملف zip في الجذر الحالي
+        ZIP_FILE=$(find . -maxdepth 1 -name "*.zip" | head -n 1)
+        if [ -z "$ZIP_FILE" ]; then
+          echo "لم يتم العثور على أي ملف ZIP في الجذر."
+          exit 1
+        fi
+        echo "جاري فك ضغط الملف: $ZIP_FILE"
+        # فك الضغط داخل مجلد جديد اسمه project
+        mkdir -p project
+        unzip -q "$ZIP_FILE" -d project
+        
+        # إذا كان الملف المضغوط يحتوي على مجلد واحد بداخله، نقوم بنقل محتوياته للخارج لتسهيل الوصول
+        CONTENTS=$(ls project)
+        COUNT=$(echo "$CONTENTS" | wc -l)
+        if [ "$COUNT" -eq 1 ] && [ -d "project/$CONTENTS" ]; then
+          mv project/$CONTENTS/* project/ 2>/dev/null || true
+          mv project/$CONTENTS/.[!.]* project/ 2>/dev/null || true
+          rmdir project/$CONTENTS 2>/dev/null || true
+        fi
+        echo "تم فك الضغط بنجاح. محتويات المجلد:"
+        ls project
+
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
 
+    # 2. البحث عن gradlew وإعطاء صلاحية التنفيذ (داخل مجلد project)
     - name: Grant execute permission for gradlew
       run: |
-        if [ -f "gradlew" ]; then
-          chmod +x gradlew
-        elif [ -f "android/gradlew" ]; then
-          chmod +x android/gradlew
+        if [ -f "project/gradlew" ]; then
+          chmod +x project/gradlew
+        elif [ -f "project/android/gradlew" ]; then
+          chmod +x project/android/gradlew
         fi
 
+    # 3. بناء التطبيق من داخل المجلد الذي تم فك ضغطه
     - name: Build Debug APK
       run: |
-        if [ -f "gradlew" ]; then
-          ./gradlew assembleDebug
-        elif [ -f "android/gradlew" ]; then
-          cd android && ./gradlew assembleDebug
+        if [ -f "project/gradlew" ]; then
+          cd project && ./gradlew assembleDebug
+        elif [ -f "project/android/gradlew" ]; then
+          cd project/android && ./gradlew assembleDebug
         else
-          echo "لم يتم العثور على gradlew. تأكد من رفع ملفات Gradle Wrapper."
+          echo "لم يتم العثور على gradlew داخل المشروع المفكوك. تأكد من أن ملف الـ ZIP يحتوي على مشروع أندرويد كامل."
           exit 1
         fi
 
+    # 4. رفع ملف الـ APK (مع تحديث المسار ليشمل مجلد project)
     - name: Upload Debug APK
       uses: actions/upload-artifact@v4
       with:
         name: SubGenius-Debug-APK
         path: |
-          app/build/outputs/apk/debug/app-debug.apk
-          android/app/build/outputs/apk/debug/app-debug.apk
+          project/app/build/outputs/apk/debug/app-debug.apk
+          project/android/app/build/outputs/apk/debug/app-debug.apk
         retention-days: 7
