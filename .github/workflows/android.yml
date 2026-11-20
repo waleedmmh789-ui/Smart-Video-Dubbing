@@ -38,6 +38,50 @@ jobs:
           echo "Project dir: $DIR"
           echo "dir=$DIR" >> "$GITHUB_OUTPUT"
 
+      # حل تعارض ملف libc++_shared.so بين المكتبات الأصلية تلقائياً
+      - name: Fix duplicate libc++_shared.so in app build gradle
+        run: |
+          APP_DIR="${{ steps.loc.outputs.dir }}/app"
+          if [ -f "$APP_DIR/build.gradle.kts" ]; then
+            if ! grep -q 'libc++_shared.so' "$APP_DIR/build.gradle.kts"; then
+              python3 -c '
+from pathlib import Path
+p = Path("'"$APP_DIR/build.gradle.kts"'")
+txt = p.read_text(encoding="utf-8")
+block = """
+android {
+    packaging {
+        jniLibs {
+            pickFirsts += listOf("**/libc++_shared.so")
+        }
+    }
+}
+"""
+p.write_text(txt + "\n" + block, encoding="utf-8")
+'
+              echo "Patched app/build.gradle.kts with pickFirst for libc++_shared.so"
+            fi
+          elif [ -f "$APP_DIR/build.gradle" ]; then
+            if ! grep -q 'libc++_shared.so' "$APP_DIR/build.gradle"; then
+              python3 -c '
+from pathlib import Path
+p = Path("'"$APP_DIR/build.gradle"'")
+txt = p.read_text(encoding="utf-8")
+block = """
+android {
+    packaging {
+        jniLibs {
+            pickFirsts += ["**/libc++_shared.so"]
+        }
+    }
+}
+"""
+p.write_text(txt + "\n" + block, encoding="utf-8")
+'
+              echo "Patched app/build.gradle with pickFirst for libc++_shared.so"
+            fi
+          fi
+
       - uses: actions/setup-java@v4
         with:
           java-version: '17'
@@ -46,7 +90,6 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
-      # Gradle يُثبَّت هنا، فلا حاجة لملف gradlew
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
@@ -56,9 +99,9 @@ jobs:
         run: |
           if [ -f ./gradlew ]; then
             chmod +x ./gradlew
-            ./gradlew :app:assembleDebug --no-daemon --stacktrace
+            ./gradlew :app:assembleDebug --no-daemon
           else
-            gradle :app:assembleDebug --no-daemon --stacktrace
+            gradle :app:assembleDebug --no-daemon
           fi
 
       - name: Upload Debug APK
